@@ -6,7 +6,7 @@ import glob
 
 camera = PiCamera()
 camera.resolution = (320, 240)
-camera.framerate = 30
+camera.framerate = 10
 camera.hflip = True
 camera.vflip = True
 rawCapture = PiRGBArray(camera, size=(320, 240))

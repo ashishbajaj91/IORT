@@ -1,0 +1,580 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+		<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+		<title>Virtual Reality Test</title>
+		<style>
+			body 
+			{
+				margin: 0px;
+				overflow: hidden;
+			}
+			#webglviewer 
+			{
+				bottom: 0;
+				left: 0;
+				position: absolute;
+				right: 0;
+				top: 0;
+			}
+		</style>
+		
+		<!-- source three.js -->
+		<script src="js/three.js"></script>
+		
+		<!-- Source Detector to check availability of webgl -->
+		<script src="js/Detector.js"></script>		
+		
+		<!-- Source StereoEffect to turn a regular Three.js display into one that is split into two -->
+		<script src="./js/StereoEffect.js"></script>
+
+		<!-- To know where the device is facing and where it moves to --> 
+		<script src="./js/DeviceOrientationControls.js"></script>
+		
+		<!-- To control the scene by dragging it around with our mouse or via touch events-->
+		<script src="./js/OrbitControls.js"></script>
+		
+		<!-- A font script used in this -->
+		<script src="./js/helvetiker_regular.typeface.js"></script>
+		
+		<!-- Source jquery -->
+		<script src="https://ajax.googleapis.com/ajax/libs/jquery/3.1.1/jquery.min.js"></script>		
+	</head>
+	<body>
+	<div id="webglviewer"></div>	
+	
+	<script>
+		var scene, camera, renderer, element, effect, controls = 0, clock, container, floor;
+		var wall = "XXXXXXXXXXXXXXXXX       X     GXX XXXX XXXXX XXXXXX X          XX   XX XXXXXXX XXXX  X XXXX XX XX X XX       X XX X  X XXXX XX XX X XX XXXX XXXXX X  X X     X XX   XX X XXXXX XXXX  X X       XX X XX XXXXXXXXXX X  X XX X XX XXS             XXXXXXXXXXXXXXXXX";
+		var blockDim = 15.0;
+		var y_height = blockDim/2.0;
+		var quads = [], lights =[], textures= [];
+		var new_pos, prev_pos;
+		var isMobileDevice = false;
+		
+		var speed=15.0 , rotSpeed=Math.PI;
+		var dt = 0.010;
+		
+		var isFullScreen = false;
+		
+		initialize();
+		
+		$(document).keydown(function CheckForKeyDown(e)
+		{
+			if (e.keyCode >= 37 || e.keyCode <= 38)
+			{
+				//Up Key
+				if(e.keyCode == 38)
+				{
+					moveforward();
+				}
+				//Down key
+				else if (e.keyCode == 40)
+				{
+					movebackwards();
+				}
+				//Left key
+				else if (e.keyCode == 37)
+				{
+					rotateCamera(dt * rotSpeed);							
+				}
+				//Right key
+				else if(e.keyCode == 39)
+				{
+					rotateCamera(-dt * rotSpeed);							
+				}
+			}
+		}							
+		);
+		
+		function moveforward()
+		{
+			var delz = -speed*dt;													
+			camera.translateZ(delz);
+		}
+		
+		function movebackwards()
+		{
+			var delz = speed*dt;													
+			camera.translateZ(delz);
+		}
+		
+		//Get Camera Direction
+		function getCameraDirection()
+		{
+			var x = camera.getWorldDirection().x;
+			var z = camera.getWorldDirection().z;
+			
+			var direction = new THREE.Vector3(x, 0, z);
+			direction = direction.normalize();
+			return direction;
+		}
+		
+		function GetTextures()
+		{
+			files = [
+						'textures/dark_wood.jpg',
+						'textures/wood_gray.jpg',
+						'textures/wood_plank.jpg',
+						'textures/natural_wood.jpg'
+					];
+					
+			for(i=0; i<files.length;i++)
+			{
+				var Texture = THREE.ImageUtils.loadTexture(files[i]);
+				
+				//Warping the image horizontal axis
+				Texture.wrapS = THREE.RepeatWrapping;
+				
+				//Warping the image vertical axis
+				Texture.wrapT = THREE.RepeatWrapping;
+				
+				Texture.repeat = new THREE.Vector2(50, 50);
+				Texture.anisotropy = renderer.getMaxAnisotropy();
+				
+				//Set the floor material, on basis of which it will react to light
+				//Use the texture in the material
+				var Material = new THREE.MeshBasicMaterial({
+																  color: 0xffffff,
+																  specular: 0xffffff,
+																  shininess: 20,
+																  shading: THREE.FlatShading,
+																  map: Texture,
+																  side:THREE.DoubleSide 
+																	});
+				textures.push(Material);
+			}
+		}
+		
+		function getwoodenfloormaterial()
+		{
+			var floorTexture = THREE.ImageUtils.loadTexture('textures/wood.jpg');
+			
+			//Warping the image horizontal axis
+			floorTexture.wrapS = THREE.RepeatWrapping;
+			
+			//Warping the image vertical axis
+			floorTexture.wrapT = THREE.RepeatWrapping;
+			
+			floorTexture.repeat = new THREE.Vector2(50, 50);
+			floorTexture.anisotropy = renderer.getMaxAnisotropy();
+			
+			//Set the floor material, on basis of which it will react to light
+			//Use the texture in the material
+			var floorMaterial = new THREE.MeshPhongMaterial({
+															  color: 0xffffff,
+															  specular: 0xffffff,
+															  shininess: 20,
+															  shading: THREE.FlatShading,
+															  map: floorTexture, 
+															  side:THREE.DoubleSide
+															});
+															
+			return floorMaterial;
+		}
+		
+		function AddWoodenFloor(nx,nz,d)
+		{
+			floorMaterial = getwoodenfloormaterial();
+			//Need a geometry to apply ther material to 
+			//Using a plane geometry of given height and width
+			var geometry = new THREE.PlaneBufferGeometry(d*nx, d*nz);
+			
+			//Putting together the geometry and material
+			floor = new THREE.Mesh(geometry, floorMaterial);
+			floor.rotation.x = -Math.PI / 2;
+			floor.position.set(d*nx/2,0,d*nz/2)
+		}
+		
+		function GetBlock(nx,nz,wall,d,x,z)
+		{
+			var bx=Math.floor(x/d);
+			var bz=Math.floor(z/d);
+			if(0<=bx && bx<nx && 0<=bz && bz<nz)
+			{
+				return wall.charAt(bz*nx+bx);
+			}
+			return 0;
+		}
+		
+		function createScene()
+		{
+			scene = new THREE.Scene();
+		}		
+		
+		function createCamera(fov, near, far)
+		{			
+			var aspectRatio = window.innerWidth / window.innerHeight;
+			camera = new THREE.PerspectiveCamera(fov, aspectRatio, near, far);
+			//camera.up.set(0, 1, 0);
+			//camera.rotation.x += Math.PI / 2;
+			MoveCameraTo(0,0,0)
+		}
+		
+		function MoveCameraTo(x,y,z)
+		{
+			camera.position.set(x, y, z);
+		}
+		
+		function SetUpRenderer(eleID)
+		{
+			renderer = new THREE.WebGLRenderer();
+			element = renderer.domElement;
+			container = document.getElementById(eleID);
+			container.appendChild(element);
+		}
+		
+		function createStereoForVR()
+		{
+			effect = new THREE.StereoEffect(renderer);
+		}
+		
+		function CheckMobileDevice()
+		{
+			if (/Android|webOS|iPhone|iPad|iPod|BlackBerry|BB|PlayBook|IEMobile|Windows Phone|Kindle|Silk|Opera Mini/i.test(navigator.userAgent)) 
+			{
+				isMobileDevice = true;
+			}
+		}
+		
+		function SetUpControls(enablemouse_touch)
+		{
+			if((enablemouse_touch == true) && (isMobileDevice == false))
+			{
+				controls = new THREE.OrbitControls(camera, element);
+				controls.target.set( camera.position.x, camera.position.y, camera.position.z );
+				controls.noPan = false;
+				controls.noZoom = false;
+			}
+			
+			if (isMobileDevice == true)
+			{
+				// Our preferred controls via DeviceOrientation
+				function setOrientationControls(e) 
+				{
+					//Check if we can get the alpha value. If not simply return 
+					if (!e.alpha) 
+					{
+						return;
+					}
+					
+					//Check for device orientation
+					controls = new THREE.DeviceOrientationControls(camera, true);
+					controls.connect();
+					controls.update();
+					
+					//If setting orientation control fail then we remove the event listener
+					window.removeEventListener('deviceorientation', setOrientationControls, true);	
+				}
+				
+				//Add control for device orientation
+				window.addEventListener('deviceorientation', setOrientationControls, true);
+			}
+		}
+		
+		function addListenerForClick()
+		{
+			//Go full screen on click
+			element.addEventListener('click', OnClickFunction, false);			
+		}
+		
+		function OnClickFunction()
+		{
+			if(isFullScreen==true)
+			{
+				moveforward();
+			}
+			else
+			{
+				fullscreen();
+				isFullScreen = true;
+			}
+		}
+		
+		
+		function addLight(x,y,z)
+		{
+
+			//Lets add the source of light 
+			var light = new THREE.PointLight(0x999999, 2, 125);
+			light.position.set(x,y,z);
+
+			return light;
+		}
+		
+		function addLightSource(nx,nz,d)
+		{
+			for (i= 0; i < 3; i++)
+			{
+				for(j = 0; j<3; j++)
+				{
+					var light = addLight(50+100*j,50,50+100*i);
+					lights.push(light);
+				}
+			}
+		}
+		
+		function SetUpClock()
+		{
+			clock = new THREE.Clock();			
+		}
+		
+		function clearScene()
+		{
+			//Clear the scene
+			scene.children.forEach(
+									function(object)
+									{
+										scene.remove(object);
+									}
+								);
+		}
+		
+		function resetViewPoint(nx,nz,wall,d,y)
+		{
+			for(i=0; i<nz; i++)
+			{
+				for(j=0; j<nx; j++)
+				{
+					var c=wall.charAt(i*nx+j);
+					if('S'==c)
+					{
+						xx=j*d+d/2.0;
+						zz=i*d+d/2.0;
+					}
+				}
+			}
+			MoveCameraTo(xx,y,zz);
+		}
+		
+		function rotateCamera(ang)
+		{
+			camera.rotateY(ang);
+		}	
+
+		function ReMoveCamera()
+		{
+			//Lets fix y
+			camera.position.setY(y_height);
+			new_pos = camera.getWorldPosition();
+			var x = new_pos.x;
+			var z = new_pos.z;
+			if('X'=== GetBlock(16,16,wall,blockDim,x,z) || 'X'===GetBlock(16,16,wall,blockDim,x+blockDim/10.0,z) || 'X'===GetBlock(16,16,wall,blockDim,x-blockDim/10.0,z))
+			{
+				new_pos = prev_pos;
+				MoveCameraTo(new_pos.x,y_height,new_pos.z);
+				return;
+			}
+			if('X'==GetBlock(16,16,wall,blockDim,x,z) || 'X'==GetBlock(16,16,wall,blockDim,x,z+blockDim/10.0) || 'X'==GetBlock(16,16,wall,blockDim,x,z-blockDim/10.0))
+			{
+				new_pos = prev_pos;
+				MoveCameraTo(new_pos.x,y_height,new_pos.z);
+				return;
+			}
+			prev_pos = new_pos;
+		}
+		
+		function getMaterialForquad(colorToFill)
+		{
+			var Material = new THREE.MeshBasicMaterial({ color:colorToFill, opacity: 1.0, side:THREE.DoubleSide }); 
+			return Material;
+		}
+		
+		
+		function drawQuadInX(x0,y0,z0,y1,z1, materialToUse)
+		{
+			var quad_geometry = new THREE.PlaneBufferGeometry(y1-y0, z1-z0);
+			//var Material = getMaterialForquad(colorToFill);
+			var Mesh= new THREE.Mesh(quad_geometry, materialToUse); 
+			Mesh.position.set(x0,(y1+y0)/2,(z0+z1)/2);	
+			Mesh.rotation.y = Math.PI / 2;
+			return Mesh
+		}
+		
+		function drawQuadInY(x0,y0,z0,x1,z1, materialToUse)
+		{
+			var quad_geometry = new THREE.PlaneBufferGeometry(x1-x0, z1-z0);
+			//var Material = getMaterialForquad(colorToFill);
+			var Mesh= new THREE.Mesh(quad_geometry, materialToUse); 
+			Mesh.position.set((x1+x0)/2,y0,(z0+z1)/2);	
+			Mesh.rotation.x = -Math.PI / 2;
+			return Mesh
+		}
+		
+		function drawQuadInZ(x0,y0,z0,x1,y1, materialToUse)
+		{
+			var quad_geometry = new THREE.PlaneBufferGeometry(x1-x0, y1-y0);
+			//var Material = getMaterialForquad(colorToFill);
+			var Mesh= new THREE.Mesh(quad_geometry, materialToUse);
+			Mesh.position.set((x1+x0)/2,(y0+y1)/2,z0);	
+			Mesh.rotation.z = -Math.PI / 2;
+			return Mesh
+		}
+
+		function DrawCube(x0,y0,z0,x1,y1,z1)
+		{
+			var Mat0 = getMaterialForquad(0xff0000);
+			var Mat1 = getMaterialForquad(0x00ff00);
+			var Mat2 = getMaterialForquad(0x0000ff);
+			var Mat4 = textures[2];//getwoodenfloormaterial();
+			
+			var x0face = drawQuadInX(x0,y0,z0,y1,z1,Mat4);
+			var x1face = drawQuadInX(x1,y0,z0,y1,z1,Mat4);
+			var y0face = drawQuadInY(x0,y0,z0,x1,z1,Mat1);
+			var y1face = drawQuadInY(x0,y1,z0,x1,z1,Mat1);
+			var z0face = drawQuadInZ(x0,y0,z0,x1,y1,Mat2);
+			var z1face = drawQuadInZ(x0,y0,z1,x1,y1,Mat2);
+			
+			quads.push(
+							x0face,
+							x1face,
+							y0face,
+							y1face,
+							z0face,
+							z1face
+						);
+		}
+		
+		function DrawMaze(nx,nz,wall,d)
+		{
+			for(i=0; i<nz; i++)
+			{
+				for(j=0; j<nx; j++)
+				{
+					var c=wall.charAt(i*nx+j);
+					var x0=j*d;
+					var y0=0.0;
+					var z0=i*d;
+					var x1=j*d+d;
+					var y1=d;
+					var z1=i*d+d;
+
+					if('X'==c)
+					{
+						DrawCube(x0,y0,z0,x1,y1,z1);
+					}
+					else if('G'==c)
+					{
+						var Material = getMaterialForquad(0xffff00);
+						var quad = drawQuadInY(x0,y0+1,z0,x1,z1,Material);
+						quads.push(quad);
+					}
+					else if('S'==c)
+					{
+						var Material = getMaterialForquad(0x00ffff)
+						var quad = drawQuadInY(x0,y0+1,z0,x1,z1,Material);
+						quads.push(quad);
+					}
+				}
+			}
+		}
+		
+		function initialize()
+		{
+			CheckMobileDevice();
+			createScene();
+			createCamera(60.0,1,1000);
+			SetUpRenderer('webglviewer');
+			createStereoForVR();
+			SetUpControls(false);
+			SetUpClock();
+			addListenerForClick();
+			resetViewPoint(16,16,wall,blockDim,y_height);
+			GetTextures();
+			DrawMaze(16,16,wall,blockDim);
+			AddWoodenFloor(16,16,blockDim);
+			addLightSource(16,16,blockDim);
+			redrawScene();
+			animate();
+		}
+		
+		function redrawScene()
+		{
+			clearScene();
+			
+			//Add the camera
+			scene.add(camera);
+			
+			for(i=0; i< quads.length; i++)
+			{
+				scene.add(quads[i])
+			}
+			
+			//Add light
+			for(i=0; i< lights.length; i++)
+			{
+				scene.add(lights[i])
+			}
+			
+			//Add Floor
+			scene.add(floor);
+		}
+
+		function animate()
+		{
+			//Request the function to run with next frame
+			requestAnimationFrame(animate);
+			//Lets stop user from going into blocks
+			ReMoveCamera();
+			//urn the update function
+			update(clock.getDelta());
+			//Render it 
+			render(clock.getDelta(), isMobileDevice);				
+		}
+
+		function update(dt) 
+		{
+			resize();
+			camera.updateProjectionMatrix();
+			if (controls != 0)
+			{
+				controls.update(dt);
+			}
+		}
+		
+		function render(dt, enable_stereo) 
+		{	
+			if (enable_stereo === true)
+			{	
+				effect.render(scene, camera);
+			}
+			else
+			{
+				renderer.render(scene, camera);
+			}	
+		}
+		
+		function resize() 
+		{
+			var width = container.offsetWidth;
+			var height = container.offsetHeight;
+
+			camera.aspect = width / height;
+			camera.updateProjectionMatrix();
+
+			renderer.setSize(width, height);
+			effect.setSize(width, height);
+		}
+		
+		function fullscreen() 
+		{
+			if (container.requestFullscreen) 
+			{
+			  container.requestFullscreen();
+			} 
+			else if (container.msRequestFullscreen) 
+			{
+			  container.msRequestFullscreen();
+			} else if (container.mozRequestFullScreen) 
+			{
+			  container.mozRequestFullScreen();
+			} else if (container.webkitRequestFullscreen) 
+			{
+			  container.webkitRequestFullscreen();
+			}
+		}
+		
+		</script>
+	</body>
+</html>

@@ -13,25 +13,34 @@ import time
 import matplotlib.pyplot as plt
 import math
 import glob
+import copy
 
 def moveforward(t = -1):
     print "F"
+    stop()
     iortl.forward(1.0*t)
+    stop()
     return
 
 def movebackward(t = -1):
     print "B"
+    stop()
     iortl.backward(1.0*t)
+    stop()
     return
 
 def turnCW(t = -1):
     print "CW"
+    stop()
     iortl.cw(1.0*t)
+    stop()
     return
 
 def turnCCW(t = -1):
     print "CCW"
+    stop()
     iortl.ccw(1.0*t)
+    stop()
     return
     
 def stop():
@@ -59,10 +68,6 @@ def DestroyWindow(name = None):
         cv2.destroyWindow(name)
     return
 
-def ShowImage(window_name, image):
-    cv2.imshow(window_name, image)
-    return
-
 def ConvertBGRToRGB(im):
     return cv2.cvtColor(im, cv2.COLOR_BGR2RGB)
     
@@ -85,6 +90,18 @@ def BlackoutOutsideRegion(img,contours):
     result = cv2.bitwise_and(img, stencil)
     return result
 
+def AddBlackBorder(img):
+    color = [0, 0, 0]
+    top, bottom, left, right = [50]*4
+    img_with_border = cv2.copyMakeBorder(img, top, bottom, left, right, 0,value=color)
+    return img_with_border 
+
+def RemoveBorder(img):
+    wid = img.shape[1]
+    hei = img.shape[0]
+    crop_img = img[50:hei-50,50:wid-50]    
+    return crop_img 
+		
 def MinEnclosingCircle(contour, image = None):
     (x,y),radius = cv2.minEnclosingCircle(contour)
     center = (int(x),int(y))
@@ -93,13 +110,22 @@ def MinEnclosingCircle(contour, image = None):
         cv2.circle(image,center,radius,(0,255,0),1)
     return (x,y,radius)
 
-def FindTargetInImage(image):
-    print "finding target"
-    hsv_image = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)     
+def getTargetBallColorThresholds():	
     ballLower = (29, 86, 6)
     ballUpper = (80, 200, 125)
-    mask = cv2.inRange(hsv_image, ballLower, ballUpper)
+    return ballLower, ballUpper
 
+def ConvertToHSV(image):
+    return cv2.cvtColor(image, cv2.COLOR_BGR2HSV)     
+
+def GetMaskForObject(image):
+    hsv_image = ConvertToHSV(image)
+    ballLower, ballUpper = getTargetBallColorThresholds()
+    return cv2.inRange(hsv_image, ballLower, ballUpper)
+	
+def FindTargetInImage(image):
+    print "finding target"
+    mask = GetMaskForObject(image)
     contours, _= cv2.findContours(mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
     circles = []
     for contour in contours:
@@ -108,11 +134,9 @@ def FindTargetInImage(image):
         if ((len(approx) > 15) & (area > 30) ):
             circle = MinEnclosingCircle(contour, image)       
             circles.append(circle)
-            
+				
     if len(circles) > 1:
         print "Found more than one target"
-        
-    #ShowBGRImage(image)
     return circles 
 
 def RotateToFindTarget():
@@ -134,14 +158,11 @@ def MoveRobot(circles, x_size):
         RotateToFindTarget()
     else:
         print "target found"
-        #print circles
         x = circles[0][0]
-        #print x, x_size
         TurnRobotTowardsTarget(x,x_size)
-        moveforward(0.10)
+        moveforward(0.25)
     return
     
-
 def drawContours(img, contours):
     cv2.drawContours(img, contours, -1, (0,255,0), 3)
     return img
@@ -167,26 +188,6 @@ def FindContoursWithThreshold(img, x, y, z, IsGray=True):
         #ShowGrayImage(thresh)
     contours, hierarchy = FindContours(thresh)
     return contours, hierarchy
-
-
-def AddBlackBorder(img):
-    color = [0, 0, 0]
-    top, bottom, left, right = [50]*4
-    img_with_border = cv2.copyMakeBorder(img, top, bottom, left, right, 0,value=color)
-    return img_with_border 
-
-def RemoveBorder(img):
-    wid = img.shape[1]
-    hei = img.shape[0]
-    crop_img = img[50:hei-50,50:wid-50]    
-    return crop_img 
-
-def FindContoursForMasks(masks):
-    Obstacles = []    
-    for mask in masks:
-        contours = FilterChildsAndSmallBox(FindContours(mask))     
-        Obstacles = Obstacles + contours 
-    return
 
 def MarkRectangeles(contours, img):
     for cnt in contours:
@@ -241,29 +242,39 @@ def MarkObstacles(image):
     return
 
 def movetoTarget(camera, rawCapture):
-    Raw_Feed_Window = "Raw_Feed"
+    #Raw_Feed_Window = "Raw_Feed"
     #OpenDisplayWindow(Raw_Feed_Window)
     counter = 1
-    while(1):
-        for frame in camera.capture_continuous(rawCapture, format="bgr", use_video_port=True):
-            image = frame.array
-            print counter
-            counter +=1
-            #ShowImage(Raw_Feed_Window, image)
-            rawCapture.truncate(0)
-            MoveRobot(FindTargetInImage(image), np.size(image,1))
+    print "Moving to target"
+    for frame in camera.capture_continuous(rawCapture, format="bgr", use_video_port=True):
+        print "Entered the loop"
+        image = copy.copy(frame.array)
+        print counter
+        counter +=1
+        #ShowImage(Raw_Feed_Window, image)  
+        circles = FindTargetInImage(image)
+        x_size = np.size(image,1)         
+        MoveRobot(circles, x_size)
+        #time.sleep(2.0)
+        rawCapture.truncate(0)
+        print "loop complted"
     print "it exited from loop"
     return
 
 def main():
-    camera, rawCapture = SetUpCamera()    
+    camera, rawCapture = SetUpCamera()   
+    #time.sleep(2.0)
+    print "Starting the code"
+    #iortl.init()
     movetoTarget(camera, rawCapture)
     return
 
-try:
-    stop()
-    main()
-    stop()
-except:
-    print "error"
-    stop()
+print "Sleeping"
+time.sleep(2.0)
+print "Starting"
+#stop()
+main()
+#stop()
+
+print "error"
+stop()

@@ -13,8 +13,13 @@ pwm12 = None
 pwm13 = None
 pwm15 = None
 
-def init():
+count = 0
+
+def reset():
   global pwm11, pwm12, pwm13, pwm15
+  gpio.cleanup()
+
+  #time.sleep(0.1)
   gpio.setmode(gpio.BOARD)
 
   gpio.setup(12, gpio.OUT)
@@ -26,7 +31,16 @@ def init():
   pwm11 = gpio.PWM(11, 100)
   pwm13 = gpio.PWM(13, 100)
   pwm15 = gpio.PWM(15, 100)
-
+  
+def init():
+  global pwm11, pwm12, pwm13, pwm15, count
+  count = count + 1
+  if pwm11 == None or (count % 10) == 9:
+    reset()
+  else:
+    # pause
+    pause()
+    
 def forward(tf):
   global pwm11, pwm12, pwm13, pwm15
   init()
@@ -38,9 +52,10 @@ def forward(tf):
 
   if tf > 0:
     time.sleep(tf)
-    gpio.cleanup()
+    pause()
 
 def backward(tf):
+  global pwm11, pwm12, pwm13, pwm15
   init()
 
   pwm12.start(pr1)
@@ -50,9 +65,11 @@ def backward(tf):
 
   if tf > 0:
     time.sleep(tf)
-    gpio.cleanup()
+    pause()
 
 def left(tf):
+  global pwm11, pwm12, pwm13, pwm15
+
   init()
   pwm12.start(0)
   pwm11.start(pr3l)
@@ -61,9 +78,11 @@ def left(tf):
 
   if tf > 0:
     time.sleep(tf)
-    gpio.cleanup()
+    pause()
 
 def right(tf):
+  global pwm11, pwm12, pwm13, pwm15
+
   init()
   pwm12.start(0)
   pwm11.start(pr2r)
@@ -72,10 +91,12 @@ def right(tf):
 
   if tf > 0:
     time.sleep(tf)
-    gpio.cleanup()
+    pause()
 
 
 def ccw(tf):
+  global pwm11, pwm12, pwm13, pwm15
+
   init()
   pwm12.start(pr4)
   pwm11.start(0)
@@ -84,9 +105,10 @@ def ccw(tf):
 
   if tf > 0:
     time.sleep(tf)
-    gpio.cleanup()
+    pause()
 
 def cw(tf):
+  global pwm11, pwm12, pwm13, pwm15
   init()
   pwm12.start(0)
   pwm11.start(pr4)
@@ -95,9 +117,21 @@ def cw(tf):
 
   if tf > 0:
     time.sleep(tf)
-    gpio.cleanup()
+    pause()
 
 def stop():
-  init()
+  global pwm11, pwm12, pwm13, pwm15
   gpio.cleanup()
+  pwm11 = None
+  pwm12 = None
+  pwm13 = None
+  pwm15 = None
+
+def pause():
+  global pwm11, pwm12, pwm13, pwm15
+  pwm12.stop()
+  pwm11.stop()
+  pwm13.stop()
+  pwm15.stop()
+
 
